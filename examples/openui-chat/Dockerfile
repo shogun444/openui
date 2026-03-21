@@ -52,9 +52,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000 HOSTNAME=0.0.0.0
 
-RUN addgroup --system nodejs && adduser --system nextjs
+RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 USER nextjs
-
+ 
 # Copy full standalone output to avoid brittle partial-copy assumptions
 COPY --from=builder --chown=nextjs:nodejs /app/examples/openui-chat/.next/standalone ./
 
