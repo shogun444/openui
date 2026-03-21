@@ -25,3 +25,18 @@ To learn more about OpenUI, take a look at the following resources:
 
 - [OpenUI Documentation](https://openui.com/docs) - learn about OpenUI features and API.
 - [OpenUI GitHub repository](https://github.com/thesysdev/openui) - your feedback and contributions are welcome!
+
+## Docker Usage
+
+Run these commands from the repository root.
+
+```bash
+docker build -f examples/openui-chat/Dockerfile -t openui-chat .
+docker run --rm -p 3000:3000 -e OPENAI_API_KEY=your_api_key openui-chat
+```
+
+Notes:
+
+- The Dockerfile uses pnpm workspace packages from the monorepo root build context.
+- Runtime uses Next.js standalone output (`node examples/openui-chat/server.js`).
+- A placeholder API key will start the app but chat requests return `401`.
