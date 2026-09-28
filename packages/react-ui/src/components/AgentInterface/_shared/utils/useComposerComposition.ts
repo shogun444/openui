@@ -1,9 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
-import {
-  isCommitEnter,
-  isStaleComposition,
-  shouldSubmitOnEnter,
-} from "./composerKeyboard";
+import { isStaleComposition, shouldSubmitOnEnter } from "./composerKeyboard";
 
 export interface ComposerCompositionOptions {
   textContent: string;
@@ -19,11 +15,10 @@ export interface ComposerCompositionOptions {
 /**
  * Shared voice-typing / IME composition guard for both built-in composers.
  *
- * Single source of truth for the ordering that caused the Win+H duplicate
- * drafts: a single `Enter` commits then auto-sends (no second press), Send
- * clicks always send the already-committed draft (the plain-button click
- * blurs first, so the browser commits before the click handler runs), and
- * late pre-submit `compositionend` / `onChange` echoes are swallowed via the
+ * Double-Enter: the `Enter` that closes a composition only commits and never
+ * sends; the next one sends. Send clicks send immediately (the plain-button
+ * click blurs first, so the browser commits before the click handler runs).
+ * Late pre-submit `compositionend` / `onChange` echoes are swallowed via the
  * submit epoch so the cleared draft stays clear across rounds.
  */
 export const useComposerComposition = ({
@@ -38,12 +33,10 @@ export const useComposerComposition = ({
   const isComposingRef = useRef(false);
   const submitGenRef = useRef(0);
   const activeCompositionSubmitGenRef = useRef<number | null>(null);
-  const pendingSendRef = useRef(false);
 
   useEffect(() => {
     isComposingRef.current = false;
     activeCompositionSubmitGenRef.current = null;
-    pendingSendRef.current = false;
   }, [resetKey]);
 
   const submitSnapshot = (snapshot: string) => {
@@ -60,7 +53,6 @@ export const useComposerComposition = ({
     submitGenRef.current += 1;
     isComposingRef.current = false;
     activeCompositionSubmitGenRef.current = null;
-    pendingSendRef.current = false;
     textareaRef.current?.blur();
     return true;
   };
@@ -84,21 +76,14 @@ export const useComposerComposition = ({
     activeCompositionSubmitGenRef.current = submitGenRef.current;
   };
 
-  const handleCompositionEnd = (e: { currentTarget: HTMLTextAreaElement }) => {
+  const handleCompositionEnd = () => {
     if (isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)) {
       if (textContent !== "") {
         setTextContent("");
       }
-      isComposingRef.current = false;
-      activeCompositionSubmitGenRef.current = null;
-      pendingSendRef.current = false;
-      return;
     }
     isComposingRef.current = false;
     activeCompositionSubmitGenRef.current = null;
-    if (pendingSendRef.current) {
-      submitSnapshot(e.currentTarget.value);
-    }
   };
 
   const handleBlur = () => {
@@ -109,15 +94,9 @@ export const useComposerComposition = ({
     if (e.key === "Escape" && isComposingRef.current) {
       isComposingRef.current = false;
       activeCompositionSubmitGenRef.current = null;
-      pendingSendRef.current = false;
       return;
     }
-    if (e.key === "Enter" && !e.shiftKey && isCommitEnter(e, isComposingRef.current)) {
-      e.preventDefault();
-      pendingSendRef.current = true;
-      return;
-    }
-    if (shouldSubmitOnEnter(e)) {
+    if (shouldSubmitOnEnter(e, isComposingRef.current)) {
       e.preventDefault();
       submitSnapshot(textContent);
     }

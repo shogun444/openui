@@ -21,42 +21,26 @@ const IME_KEY_CODE = 229;
 /**
  * Whether an `Enter` keydown in a composer textarea should send the draft.
  *
- * `Enter` sends and `Shift+Enter` inserts a newline — except for a true IME
- * commit, where `Enter` belongs to the IME (it commits the conversion
- * candidate) and must not reach the composer.
+ * `Enter` sends and `Shift+Enter` inserts a newline — except while a
+ * composition is open, where `Enter` belongs to the IME (it commits the
+ * conversion candidate) and must not reach the composer.
  *
- * Only the native commit signature blocks: `nativeEvent.isComposing === true`
- * or `keyCode === 229` (Safari / older Chromium). Windows Voice Typing
- * (Win+H, Chrome 153 / Edge 154 on Windows 11 25H2) reports a fast mid-
- * dictation `Enter` as `isComposing: false` + `keyCode: 13`, so it intentionally
- * sends in a single press: the composer snapshots the draft, submits once,
- * blurs to detach the OS dictation target, and swallows the late
- * pre-submit `compositionend` / `onChange` via the submit epoch below.
- * CJK keeps double-Enter (first commits, second sends) because its commit
- * `Enter` carries the native signature above.
- */
-export const shouldSubmitOnEnter = (event: ComposerKeyDownEvent): boolean => {
-  if (event.key !== "Enter" || event.shiftKey) return false;
-  return !event.nativeEvent.isComposing && event.keyCode !== IME_KEY_CODE;
-};
-
-/**
- * Whether an `Enter` keydown is the commit keystroke of an open composition
- * that must still result in a single send without a second press.
+ * `trackedIsComposing` is the composer-owned `onCompositionStart/End` ref.
+ * It covers the stale-timing case where Windows Voice Typing (Win+H, Chrome
+ * 153 / Edge 154 on Windows 11 25H2) reports `isComposing: false` and
+ * `keyCode: 13` on a fast `Enter` pressed mid-dictation even though the
+ * dictation session is still open.
  *
- * Covers the native commit signature (`isComposing` / `229`) plus the tracked
- * `onCompositionStart/End` ref for the Voice Typing stale-timing case
- * (`isComposing: false` + `13` while a dictation session is still open).
- * Call sites `preventDefault`, set a pending-send flag, let the browser
- * commit, then auto-send the committed value on `compositionend` — one
- * physical press, one message, draft left clear.
+ * Consequence, shared with every IME-aware composer: the `Enter` that closes
+ * a composition does not send. The next one does.
  */
-export const isCommitEnter = (
+export const shouldSubmitOnEnter = (
   event: ComposerKeyDownEvent,
   trackedIsComposing = false,
 ): boolean => {
   if (event.key !== "Enter" || event.shiftKey) return false;
-  return event.nativeEvent.isComposing || event.keyCode === IME_KEY_CODE || trackedIsComposing;
+  if (trackedIsComposing) return false;
+  return !event.nativeEvent.isComposing && event.keyCode !== IME_KEY_CODE;
 };
 
 /**
