@@ -1,12 +1,12 @@
 import { useThread, useThreadList } from "@openuidev/react-headless";
 import clsx from "clsx";
 import { ArrowUp, Square } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useLayoutContext } from "../../../context/LayoutContext";
 import { useAutoFocus } from "../../../hooks/useAutoFocus";
 import { useComposerState } from "../../../hooks/useComposerState";
 import { IconButton } from "../../IconButton";
-import { isCommitEnter, isStaleComposition, shouldSubmitOnEnter } from "../_shared/utils/composerKeyboard";
+import { useComposerComposition } from "../_shared/utils/useComposerComposition";
 
 export interface ComposerProps {
   className?: string;
@@ -20,10 +20,6 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
   const isRunning = useThread((s) => s.isRunning);
   const isLoadingMessages = useThread((s) => s.isLoadingMessages);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const isComposingRef = useRef(false);
-  const submitGenRef = useRef(0);
-  const activeCompositionSubmitGenRef = useRef<number | null>(null);
-  const pendingSendRef = useRef(false);
   const [hasInputOverflowTop, setHasInputOverflowTop] = useState(false);
   const [hasInputOverflowBottom, setHasInputOverflowBottom] = useState(false);
   const selectedThreadId = useThreadList((s) => s.selectedThreadId);
@@ -34,39 +30,22 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
     focusKey: selectedThreadId,
   });
 
-  useEffect(() => {
-    isComposingRef.current = false;
-    activeCompositionSubmitGenRef.current = null;
-    pendingSendRef.current = false;
-  }, [selectedThreadId]);
-
-  const submitSnapshot = (snapshot: string) => {
-    if (!snapshot.trim() || isRunning || isLoadingMessages) {
-      return false;
-    }
-
-    processMessage({
-      role: "user",
-      content: snapshot,
-    });
-
-    setTextContent("");
-    submitGenRef.current += 1;
-    isComposingRef.current = false;
-    activeCompositionSubmitGenRef.current = null;
-    pendingSendRef.current = false;
-    inputRef.current?.blur();
-    return true;
-  };
-
-  const handleSubmit = () => {
-    if (isComposingRef.current) {
-      pendingSendRef.current = true;
-      inputRef.current?.blur();
-      return;
-    }
-    submitSnapshot(textContent);
-  };
+  const {
+    handleSubmit,
+    handleChange,
+    handleCompositionStart,
+    handleCompositionEnd,
+    handleBlur,
+    handleKeyDown,
+  } = useComposerComposition({
+    textContent,
+    setTextContent,
+    processMessage,
+    isRunning,
+    isLoadingMessages,
+    textareaRef: inputRef,
+    resetKey: selectedThreadId,
+  });
 
   const updateInputOverflow = useCallback(() => {
     const input = inputRef.current;
@@ -77,38 +56,6 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
     setHasInputOverflowTop(maxScrollTop > 0 && input.scrollTop > 0);
     setHasInputOverflowBottom(maxScrollTop > 0 && input.scrollTop < maxScrollTop - 1);
   }, []);
-
-  const handleChange = (value: string) => {
-    if (
-      isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)
-    ) {
-      if (textContent !== "") {
-        setTextContent("");
-      }
-      return;
-    }
-    setTextContent(value);
-  };
-
-  const handleCompositionEnd = (e: { currentTarget: HTMLTextAreaElement }) => {
-    if (
-      isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)
-    ) {
-      if (textContent !== "") {
-        setTextContent("");
-      }
-      isComposingRef.current = false;
-      activeCompositionSubmitGenRef.current = null;
-      pendingSendRef.current = false;
-      return;
-    }
-    isComposingRef.current = false;
-    activeCompositionSubmitGenRef.current = null;
-    if (pendingSendRef.current) {
-      const committed = e.currentTarget.value;
-      submitSnapshot(committed);
-    }
-  };
 
   useLayoutEffect(() => {
     const input = inputRef.current;
@@ -140,41 +87,14 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
           value={textContent}
           autoFocus
           onChange={(e) => handleChange(e.target.value)}
-          onCompositionStart={() => {
-            isComposingRef.current = true;
-            activeCompositionSubmitGenRef.current = submitGenRef.current;
-          }}
+          onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
-          onBlur={() => {
-            isComposingRef.current = false;
-            if (pendingSendRef.current) {
-              pendingSendRef.current = false;
-              if (textContent.trim()) {
-                submitSnapshot(textContent);
-              }
-            }
-          }}
+          onBlur={handleBlur}
           onScroll={updateInputOverflow}
           className="openui-agent-thread-composer__input"
           placeholder={placeholder}
           rows={1}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && isComposingRef.current) {
-              isComposingRef.current = false;
-              activeCompositionSubmitGenRef.current = null;
-              pendingSendRef.current = false;
-              return;
-            }
-            if (e.key === "Enter" && !e.shiftKey && isCommitEnter(e, isComposingRef.current)) {
-              e.preventDefault();
-              pendingSendRef.current = true;
-              return;
-            }
-            if (shouldSubmitOnEnter(e)) {
-              e.preventDefault();
-              handleSubmit();
-            }
-          }}
+          onKeyDown={handleKeyDown}
         />
         <div className="openui-agent-thread-composer__action-bar">
           <IconButton
