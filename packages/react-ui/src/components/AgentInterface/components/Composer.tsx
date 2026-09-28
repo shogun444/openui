@@ -36,6 +36,7 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
     handleCompositionStart,
     handleCompositionEnd,
     handleBlur,
+    handleFocus,
     handleKeyDown,
   } = useComposerComposition({
     textContent,
@@ -90,6 +91,7 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           onBlur={handleBlur}
+          onFocus={handleFocus}
           onScroll={updateInputOverflow}
           className="openui-agent-thread-composer__input"
           placeholder={placeholder}

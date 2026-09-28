@@ -44,6 +44,24 @@ export const shouldSubmitOnEnter = (
 };
 
 /**
+ * Whether an `Enter` keydown is the commit keystroke of an open composition.
+ *
+ * Covers the native commit signature (`isComposing` / `229`) plus the tracked
+ * `onCompositionStart/End` ref for the Voice Typing stale-timing case
+ * (`isComposing: false` + `13` while a dictation session is still open).
+ * Call sites let the browser commit, apply the final value once on
+ * `compositionend`, and arm the stopped state — first `Enter` commits and
+ * stops, second `Enter` sends.
+ */
+export const isCommitEnter = (
+  event: ComposerKeyDownEvent,
+  trackedIsComposing = false,
+): boolean => {
+  if (event.key !== "Enter" || event.shiftKey) return false;
+  return event.nativeEvent.isComposing || event.keyCode === IME_KEY_CODE || trackedIsComposing;
+};
+
+/**
  * Whether a late composition event belongs to a pre-submit dictation session
  * and must be swallowed to keep a cleared draft clear.
  *

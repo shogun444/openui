@@ -60,6 +60,7 @@ export const DesktopWelcomeComposer = ({
     handleCompositionStart,
     handleCompositionEnd,
     handleBlur,
+    handleFocus,
     handleKeyDown,
   } = useComposerComposition({
     textContent,
@@ -95,6 +96,7 @@ export const DesktopWelcomeComposer = ({
         onCompositionStart={handleCompositionStart}
         onCompositionEnd={handleCompositionEnd}
         onBlur={handleBlur}
+        onFocus={handleFocus}
         onKeyDown={handleKeyDown}
       />
       <div className="openui-agent-desktop-welcome-composer__action-bar">

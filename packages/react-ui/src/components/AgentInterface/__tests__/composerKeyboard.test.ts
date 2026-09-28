@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ComposerKeyDownEvent,
+  isCommitEnter,
   isStaleComposition,
   shouldSubmitOnEnter,
 } from "../_shared/utils/composerKeyboard";
@@ -49,6 +50,28 @@ describe("shouldSubmitOnEnter", () => {
 
   it("allows Enter once the tracked composition ends", () => {
     expect(shouldSubmitOnEnter(keyDown(), false)).toBe(true);
+  });
+});
+
+describe("isCommitEnter", () => {
+  it("detects a native composing Enter as the commit keystroke", () => {
+    expect(isCommitEnter(keyDown({ nativeEvent: { isComposing: true } }))).toBe(true);
+  });
+
+  it("detects the 229 sentinel as the commit keystroke", () => {
+    expect(isCommitEnter(keyDown({ keyCode: 229 }))).toBe(true);
+  });
+
+  it("detects a stale-timing voice Enter via the tracked ref", () => {
+    expect(isCommitEnter(keyDown(), true)).toBe(true);
+  });
+
+  it("does not treat a plain Enter as a commit", () => {
+    expect(isCommitEnter(keyDown())).toBe(false);
+  });
+
+  it("never commits on Shift+Enter", () => {
+    expect(isCommitEnter(keyDown({ shiftKey: true }), true)).toBe(false);
   });
 });
 
