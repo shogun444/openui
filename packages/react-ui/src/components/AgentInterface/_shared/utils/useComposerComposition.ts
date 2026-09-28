@@ -63,8 +63,21 @@ export const useComposerComposition = ({
     stopTimerRef.current = setTimeout(() => {
       stopTimerRef.current = null;
       stoppedRef.current = false;
-      if (!isComposingRef.current) {
-        commitPendingRef.current = false;
+      if (commitPendingRef.current) {
+        if (isComposingRef.current) {
+          // The commit Enter never produced a `compositionend` (voice session
+          // aborted mid-dictation). Flush the best snapshot once so the draft
+          // holds one copy and later input is never stuck behind pending.
+          const committed = textareaRef.current?.value ?? "";
+          commitPendingRef.current = false;
+          isComposingRef.current = false;
+          activeCompositionSubmitGenRef.current = null;
+          if (committed !== "") {
+            setTextContent(committed);
+          }
+        } else {
+          commitPendingRef.current = false;
+        }
       }
     }, STOP_WINDOW_MS);
   };
