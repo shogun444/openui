@@ -6,7 +6,7 @@ import { useLayoutContext } from "../../../context/LayoutContext";
 import { useAutoFocus } from "../../../hooks/useAutoFocus";
 import { useComposerState } from "../../../hooks/useComposerState";
 import { IconButton } from "../../IconButton";
-import { isStaleComposition, shouldSubmitOnEnter } from "../_shared/utils/composerKeyboard";
+import { isCommitEnter, isStaleComposition, shouldSubmitOnEnter } from "../_shared/utils/composerKeyboard";
 
 export interface ComposerProps {
   className?: string;
@@ -23,6 +23,7 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
   const isComposingRef = useRef(false);
   const submitGenRef = useRef(0);
   const activeCompositionSubmitGenRef = useRef<number | null>(null);
+  const pendingSendRef = useRef(false);
   const [hasInputOverflowTop, setHasInputOverflowTop] = useState(false);
   const [hasInputOverflowBottom, setHasInputOverflowBottom] = useState(false);
   const selectedThreadId = useThreadList((s) => s.selectedThreadId);
@@ -36,7 +37,36 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
   useEffect(() => {
     isComposingRef.current = false;
     activeCompositionSubmitGenRef.current = null;
+    pendingSendRef.current = false;
   }, [selectedThreadId]);
+
+  const submitSnapshot = (snapshot: string) => {
+    if (!snapshot.trim() || isRunning || isLoadingMessages) {
+      return false;
+    }
+
+    processMessage({
+      role: "user",
+      content: snapshot,
+    });
+
+    setTextContent("");
+    submitGenRef.current += 1;
+    isComposingRef.current = false;
+    activeCompositionSubmitGenRef.current = null;
+    pendingSendRef.current = false;
+    inputRef.current?.blur();
+    return true;
+  };
+
+  const handleSubmit = () => {
+    if (isComposingRef.current) {
+      pendingSendRef.current = true;
+      inputRef.current?.blur();
+      return;
+    }
+    submitSnapshot(textContent);
+  };
 
   const updateInputOverflow = useCallback(() => {
     const input = inputRef.current;
@@ -47,23 +77,6 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
     setHasInputOverflowTop(maxScrollTop > 0 && input.scrollTop > 0);
     setHasInputOverflowBottom(maxScrollTop > 0 && input.scrollTop < maxScrollTop - 1);
   }, []);
-
-  const handleSubmit = () => {
-    if (!textContent.trim() || isRunning || isLoadingMessages) {
-      return;
-    }
-
-    const snapshot = textContent;
-    processMessage({
-      role: "user",
-      content: snapshot,
-    });
-
-    setTextContent("");
-    submitGenRef.current += 1;
-    isComposingRef.current = false;
-    inputRef.current?.blur();
-  };
 
   const handleChange = (value: string) => {
     if (
@@ -77,16 +90,24 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
     setTextContent(value);
   };
 
-  const handleCompositionEnd = () => {
+  const handleCompositionEnd = (e: { currentTarget: HTMLTextAreaElement }) => {
     if (
       isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)
     ) {
       if (textContent !== "") {
         setTextContent("");
       }
+      isComposingRef.current = false;
+      activeCompositionSubmitGenRef.current = null;
+      pendingSendRef.current = false;
+      return;
     }
     isComposingRef.current = false;
     activeCompositionSubmitGenRef.current = null;
+    if (pendingSendRef.current) {
+      const committed = e.currentTarget.value;
+      submitSnapshot(committed);
+    }
   };
 
   useLayoutEffect(() => {
@@ -126,6 +147,12 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
           onCompositionEnd={handleCompositionEnd}
           onBlur={() => {
             isComposingRef.current = false;
+            if (pendingSendRef.current) {
+              pendingSendRef.current = false;
+              if (textContent.trim()) {
+                submitSnapshot(textContent);
+              }
+            }
           }}
           onScroll={updateInputOverflow}
           className="openui-agent-thread-composer__input"
@@ -135,6 +162,12 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
             if (e.key === "Escape" && isComposingRef.current) {
               isComposingRef.current = false;
               activeCompositionSubmitGenRef.current = null;
+              pendingSendRef.current = false;
+              return;
+            }
+            if (e.key === "Enter" && !e.shiftKey && isCommitEnter(e, isComposingRef.current)) {
+              e.preventDefault();
+              pendingSendRef.current = true;
               return;
             }
             if (shouldSubmitOnEnter(e)) {

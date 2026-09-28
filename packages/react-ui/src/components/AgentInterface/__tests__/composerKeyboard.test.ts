@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ComposerKeyDownEvent,
+  isCommitEnter,
   isStaleComposition,
   shouldSubmitOnEnter,
 } from "../_shared/utils/composerKeyboard";
@@ -44,6 +45,37 @@ describe("shouldSubmitOnEnter", () => {
     // Windows Voice Typing (Win+H, Chrome 153 / Edge 154 on Windows 11 25H2)
     // reports a fast mid-dictation Enter as not-composing. It must snapshot
     // and send once; the late pre-submit composition echo is swallowed by epoch.
+    expect(shouldSubmitOnEnter(keyDown())).toBe(true);
+  });
+});
+
+describe("isCommitEnter", () => {
+  it("treats a native composing Enter as a single-press commit-then-send", () => {
+    expect(isCommitEnter(keyDown({ nativeEvent: { isComposing: true } }))).toBe(true);
+  });
+
+  it("treats the 229 sentinel as a commit-then-send", () => {
+    expect(isCommitEnter(keyDown({ keyCode: 229 }))).toBe(true);
+  });
+
+  it("treats a stale-timing voice Enter as a commit-then-send via the tracked ref", () => {
+    expect(isCommitEnter(keyDown(), true)).toBe(true);
+  });
+
+  it("does not treat a plain Enter as a commit", () => {
+    expect(isCommitEnter(keyDown())).toBe(false);
+  });
+
+  it("never commits on Shift+Enter", () => {
+    expect(isCommitEnter(keyDown({ shiftKey: true }), true)).toBe(false);
+  });
+
+  it("single physical press commits then auto-sends without a second Enter", () => {
+    // compositionstart (tracked) -> commit Enter (pending) -> compositionend
+    // auto-sends committed value -> draft clear, no second keydown needed.
+    const commitEnter = keyDown({ nativeEvent: { isComposing: true } });
+    expect(shouldSubmitOnEnter(commitEnter)).toBe(false);
+    expect(isCommitEnter(commitEnter, true)).toBe(true);
     expect(shouldSubmitOnEnter(keyDown())).toBe(true);
   });
 });
