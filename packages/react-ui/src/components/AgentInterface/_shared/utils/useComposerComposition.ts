@@ -20,7 +20,7 @@ const isModifierKey = (key: string) =>
   key === "CapsLock";
 
 /** Trailing-tail silence after a commit Enter before a new Win+H session may append. */
-const STOP_WINDOW_MS = 1500;
+export const STOP_WINDOW_MS = 1500;
 
 /**
  * Shared voice-typing / IME composition guard for both built-in composers.
@@ -63,7 +63,9 @@ export const useComposerComposition = ({
     stopTimerRef.current = setTimeout(() => {
       stopTimerRef.current = null;
       stoppedRef.current = false;
-      commitPendingRef.current = false;
+      if (!isComposingRef.current) {
+        commitPendingRef.current = false;
+      }
     }, STOP_WINDOW_MS);
   };
 
@@ -162,7 +164,9 @@ export const useComposerComposition = ({
 
   const handleFocus = () => {
     stoppedRef.current = false;
-    commitPendingRef.current = false;
+    if (!isComposingRef.current) {
+      commitPendingRef.current = false;
+    }
     clearStopTimer();
   };
 

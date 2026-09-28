@@ -5,6 +5,7 @@ import {
   isStaleComposition,
   shouldSubmitOnEnter,
 } from "../_shared/utils/composerKeyboard";
+import { STOP_WINDOW_MS } from "../_shared/utils/useComposerComposition";
 
 const keyDown = (overrides: Partial<ComposerKeyDownEvent> = {}): ComposerKeyDownEvent => ({
   key: "Enter",
@@ -96,5 +97,11 @@ describe("isStaleComposition", () => {
       submitGen += 1;
       expect(isStaleComposition(startSubmitGen, submitGen)).toBe(true);
     }
+  });
+});
+
+describe("STOP_WINDOW_MS", () => {
+  it("keeps the trailing-tail silence at the agreed 1500ms", () => {
+    expect(STOP_WINDOW_MS).toBe(1500);
   });
 });
