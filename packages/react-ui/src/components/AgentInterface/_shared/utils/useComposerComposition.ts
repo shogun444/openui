@@ -19,6 +19,9 @@ const isModifierKey = (key: string) =>
   key === "Meta" ||
   key === "CapsLock";
 
+/** Trailing-tail silence after a commit Enter before a new Win+H session may append. */
+const STOP_WINDOW_MS = 1500;
+
 /**
  * Shared voice-typing / IME composition guard for both built-in composers.
  *
@@ -27,7 +30,9 @@ const isModifierKey = (key: string) =>
  * `Enter` (or Send) submits that single copy. Send clicks send immediately
  * (the plain-button click blurs first, so the browser commits before the
  * click handler runs). Late pre-submit echoes are swallowed via the submit
- * epoch so the cleared draft stays clear across rounds.
+ * epoch so the cleared draft stays clear across rounds. The stopped state
+ * expires after `STOP_WINDOW_MS` so a deliberate new Win+H session appends
+ * after the committed text instead of being silenced forever.
  */
 export const useComposerComposition = ({
   textContent,
@@ -43,13 +48,39 @@ export const useComposerComposition = ({
   const activeCompositionSubmitGenRef = useRef<number | null>(null);
   const commitPendingRef = useRef(false);
   const stoppedRef = useRef(false);
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearStopTimer = () => {
+    if (stopTimerRef.current !== null) {
+      clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  };
+
+  const armStopped = () => {
+    stoppedRef.current = true;
+    clearStopTimer();
+    stopTimerRef.current = setTimeout(() => {
+      stopTimerRef.current = null;
+      stoppedRef.current = false;
+      commitPendingRef.current = false;
+    }, STOP_WINDOW_MS);
+  };
 
   useEffect(() => {
     isComposingRef.current = false;
     activeCompositionSubmitGenRef.current = null;
     commitPendingRef.current = false;
     stoppedRef.current = false;
+    clearStopTimer();
   }, [resetKey]);
+
+  useEffect(
+    () => () => {
+      clearStopTimer();
+    },
+    [],
+  );
 
   const submitSnapshot = (snapshot: string) => {
     if (!snapshot.trim() || isRunning || isLoadingMessages) {
@@ -67,6 +98,7 @@ export const useComposerComposition = ({
     activeCompositionSubmitGenRef.current = null;
     commitPendingRef.current = false;
     stoppedRef.current = false;
+    clearStopTimer();
     textareaRef.current?.blur();
     return true;
   };
@@ -74,6 +106,7 @@ export const useComposerComposition = ({
   const handleSubmit = () => {
     stoppedRef.current = false;
     commitPendingRef.current = false;
+    clearStopTimer();
     submitSnapshot(textContent);
   };
 
@@ -129,6 +162,8 @@ export const useComposerComposition = ({
 
   const handleFocus = () => {
     stoppedRef.current = false;
+    commitPendingRef.current = false;
+    clearStopTimer();
   };
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -137,12 +172,14 @@ export const useComposerComposition = ({
       activeCompositionSubmitGenRef.current = null;
       commitPendingRef.current = false;
       stoppedRef.current = false;
+      clearStopTimer();
       return;
     }
     if (stoppedRef.current && !isModifierKey(e.key)) {
       if (e.key === "Enter" && !e.shiftKey) {
         stoppedRef.current = false;
         commitPendingRef.current = false;
+        clearStopTimer();
         if (shouldSubmitOnEnter(e, false)) {
           e.preventDefault();
           submitSnapshot(textContent);
@@ -151,10 +188,11 @@ export const useComposerComposition = ({
       }
       stoppedRef.current = false;
       commitPendingRef.current = false;
+      clearStopTimer();
     }
     if (e.key === "Enter" && !e.shiftKey && isCommitEnter(e, isComposingRef.current)) {
       commitPendingRef.current = true;
-      stoppedRef.current = true;
+      armStopped();
       return;
     }
     if (shouldSubmitOnEnter(e, isComposingRef.current)) {
