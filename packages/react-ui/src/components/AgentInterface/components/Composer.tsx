@@ -6,7 +6,7 @@ import { useLayoutContext } from "../../../context/LayoutContext";
 import { useAutoFocus } from "../../../hooks/useAutoFocus";
 import { useComposerState } from "../../../hooks/useComposerState";
 import { IconButton } from "../../IconButton";
-import { shouldSubmitOnEnter } from "../_shared/utils/composerKeyboard";
+import { shouldSubmitOnEnter, shouldSubmitOnSend } from "../_shared/utils/composerKeyboard";
 
 export interface ComposerProps {
   className?: string;
@@ -20,6 +20,7 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
   const isRunning = useThread((s) => s.isRunning);
   const isLoadingMessages = useThread((s) => s.isLoadingMessages);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isComposingRef = useRef(false);
   const [hasInputOverflowTop, setHasInputOverflowTop] = useState(false);
   const [hasInputOverflowBottom, setHasInputOverflowBottom] = useState(false);
   const selectedThreadId = useThreadList((s) => s.selectedThreadId);
@@ -41,6 +42,9 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
   }, []);
 
   const handleSubmit = () => {
+    if (!shouldSubmitOnSend(isComposingRef.current)) {
+      return;
+    }
     if (!textContent.trim() || isRunning || isLoadingMessages) {
       return;
     }
@@ -83,12 +87,18 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
           value={textContent}
           autoFocus
           onChange={(e) => setTextContent(e.target.value)}
+          onCompositionStart={() => {
+            isComposingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false;
+          }}
           onScroll={updateInputOverflow}
           className="openui-agent-thread-composer__input"
           placeholder={placeholder}
           rows={1}
           onKeyDown={(e) => {
-            if (shouldSubmitOnEnter(e)) {
+            if (shouldSubmitOnEnter(e, isComposingRef.current)) {
               e.preventDefault();
               handleSubmit();
             }

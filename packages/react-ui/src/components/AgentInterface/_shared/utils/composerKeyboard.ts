@@ -31,10 +31,37 @@ const IME_KEY_CODE = 229;
  * text reappears in the box the user just emptied. Every CJK IME hits the same
  * path and sends a half-converted phrase instead of committing it.
  *
+ * `trackedIsComposing` is the composer-owned `onCompositionStart/End` ref.
+ * It covers the stale-timing case where Windows Voice Typing (Chrome 153,
+ * Edge 154 on Windows 11 25H2) reports `isComposing: false` and `keyCode: 13`
+ * on a fast `Enter` pressed mid-dictation even though the composition session
+ * is still open. The ref is set by the earlier `compositionstart` and stays
+ * true until `compositionend`, so the fast `Enter` is still blocked.
+ *
  * Consequence, shared with every IME-aware composer: the `Enter` that closes a
  * composition does not send. The next one does.
  */
-export const shouldSubmitOnEnter = (event: ComposerKeyDownEvent): boolean => {
+export const shouldSubmitOnEnter = (
+  event: ComposerKeyDownEvent,
+  trackedIsComposing = false,
+): boolean => {
   if (event.key !== "Enter" || event.shiftKey) return false;
+  if (trackedIsComposing) return false;
   return !event.nativeEvent.isComposing && event.keyCode !== IME_KEY_CODE;
+};
+
+/**
+ * Whether a Send-button click should send the draft.
+ *
+ * Clicks carry no `isComposing` payload, so call sites pass the same
+ * `onCompositionStart/End` ref used for `Enter`. Blocking while the ref is
+ * set prevents the click variant of the Voice Typing race (submit + clear
+ * mid-dictation, then a late `compositionend`/`onChange` restores the text).
+ * A click that lands after `compositionend` (the normal path, including after
+ * textarea blur) sees `false` and sends as usual, so working Send behavior is
+ * preserved. Streaming cancellation bypasses this via the `isRunning`
+ * ternary at the call sites and is unaffected.
+ */
+export const shouldSubmitOnSend = (trackedIsComposing = false): boolean => {
+  return !trackedIsComposing;
 };

@@ -6,7 +6,7 @@ import { useLayoutContext } from "../../../context/LayoutContext";
 import { useAutoFocus } from "../../../hooks/useAutoFocus";
 import { useComposerState } from "../../../hooks/useComposerState";
 import { IconButton } from "../../IconButton";
-import { shouldSubmitOnEnter } from "../_shared/utils/composerKeyboard";
+import { shouldSubmitOnEnter, shouldSubmitOnSend } from "../_shared/utils/composerKeyboard";
 
 export interface DesktopWelcomeComposerProps {
   className?: string;
@@ -46,6 +46,7 @@ export const DesktopWelcomeComposer = ({
   const isLoadingMessages = useThread((s) => s.isLoadingMessages);
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = inputRef ?? ownRef;
+  const isComposingRef = useRef(false);
   const selectedThreadId = useThreadList((s) => s.selectedThreadId);
   const { layout } = useLayoutContext();
 
@@ -55,6 +56,9 @@ export const DesktopWelcomeComposer = ({
   });
 
   const handleSubmit = () => {
+    if (!shouldSubmitOnSend(isComposingRef.current)) {
+      return;
+    }
     if (!textContent.trim() || isRunning || isLoadingMessages) {
       return;
     }
@@ -88,8 +92,14 @@ export const DesktopWelcomeComposer = ({
         className="openui-agent-desktop-welcome-composer__input"
         placeholder={placeholder}
         rows={1}
+        onCompositionStart={() => {
+          isComposingRef.current = true;
+        }}
+        onCompositionEnd={() => {
+          isComposingRef.current = false;
+        }}
         onKeyDown={(e) => {
-          if (shouldSubmitOnEnter(e)) {
+          if (shouldSubmitOnEnter(e, isComposingRef.current)) {
             e.preventDefault();
             handleSubmit();
           }
