@@ -1,12 +1,12 @@
 import { useThread, useThreadList } from "@openuidev/react-headless";
 import clsx from "clsx";
 import { ArrowUp, Square } from "lucide-react";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLayoutContext } from "../../../context/LayoutContext";
 import { useAutoFocus } from "../../../hooks/useAutoFocus";
 import { useComposerState } from "../../../hooks/useComposerState";
 import { IconButton } from "../../IconButton";
-import { shouldSubmitOnEnter, shouldSubmitOnSend } from "../_shared/utils/composerKeyboard";
+import { isStaleComposition, shouldSubmitOnEnter } from "../_shared/utils/composerKeyboard";
 
 export interface ComposerProps {
   className?: string;
@@ -21,6 +21,8 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
   const isLoadingMessages = useThread((s) => s.isLoadingMessages);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
+  const submitGenRef = useRef(0);
+  const activeCompositionSubmitGenRef = useRef<number | null>(null);
   const [hasInputOverflowTop, setHasInputOverflowTop] = useState(false);
   const [hasInputOverflowBottom, setHasInputOverflowBottom] = useState(false);
   const selectedThreadId = useThreadList((s) => s.selectedThreadId);
@@ -30,6 +32,11 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
     enabled: layout !== "mobile" && !isLoadingMessages,
     focusKey: selectedThreadId,
   });
+
+  useEffect(() => {
+    isComposingRef.current = false;
+    activeCompositionSubmitGenRef.current = null;
+  }, [selectedThreadId]);
 
   const updateInputOverflow = useCallback(() => {
     const input = inputRef.current;
@@ -42,19 +49,44 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
   }, []);
 
   const handleSubmit = () => {
-    if (!shouldSubmitOnSend(isComposingRef.current)) {
-      return;
-    }
     if (!textContent.trim() || isRunning || isLoadingMessages) {
       return;
     }
 
+    const snapshot = textContent;
     processMessage({
       role: "user",
-      content: textContent,
+      content: snapshot,
     });
 
     setTextContent("");
+    submitGenRef.current += 1;
+    isComposingRef.current = false;
+    inputRef.current?.blur();
+  };
+
+  const handleChange = (value: string) => {
+    if (
+      isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)
+    ) {
+      if (textContent !== "") {
+        setTextContent("");
+      }
+      return;
+    }
+    setTextContent(value);
+  };
+
+  const handleCompositionEnd = () => {
+    if (
+      isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)
+    ) {
+      if (textContent !== "") {
+        setTextContent("");
+      }
+    }
+    isComposingRef.current = false;
+    activeCompositionSubmitGenRef.current = null;
   };
 
   useLayoutEffect(() => {
@@ -86,11 +118,13 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
           ref={inputRef}
           value={textContent}
           autoFocus
-          onChange={(e) => setTextContent(e.target.value)}
+          onChange={(e) => handleChange(e.target.value)}
           onCompositionStart={() => {
             isComposingRef.current = true;
+            activeCompositionSubmitGenRef.current = submitGenRef.current;
           }}
-          onCompositionEnd={() => {
+          onCompositionEnd={handleCompositionEnd}
+          onBlur={() => {
             isComposingRef.current = false;
           }}
           onScroll={updateInputOverflow}
@@ -98,7 +132,12 @@ export const Composer = ({ className, placeholder = "Type your query here" }: Co
           placeholder={placeholder}
           rows={1}
           onKeyDown={(e) => {
-            if (shouldSubmitOnEnter(e, isComposingRef.current)) {
+            if (e.key === "Escape" && isComposingRef.current) {
+              isComposingRef.current = false;
+              activeCompositionSubmitGenRef.current = null;
+              return;
+            }
+            if (shouldSubmitOnEnter(e)) {
               e.preventDefault();
               handleSubmit();
             }

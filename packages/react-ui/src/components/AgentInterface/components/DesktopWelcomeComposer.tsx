@@ -1,12 +1,12 @@
 import { useThread, useThreadList } from "@openuidev/react-headless";
 import clsx from "clsx";
 import { ArrowUp, Square } from "lucide-react";
-import { RefObject, useLayoutEffect, useRef } from "react";
+import { RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { useLayoutContext } from "../../../context/LayoutContext";
 import { useAutoFocus } from "../../../hooks/useAutoFocus";
 import { useComposerState } from "../../../hooks/useComposerState";
 import { IconButton } from "../../IconButton";
-import { shouldSubmitOnEnter, shouldSubmitOnSend } from "../_shared/utils/composerKeyboard";
+import { isStaleComposition, shouldSubmitOnEnter } from "../_shared/utils/composerKeyboard";
 
 export interface DesktopWelcomeComposerProps {
   className?: string;
@@ -47,6 +47,8 @@ export const DesktopWelcomeComposer = ({
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = inputRef ?? ownRef;
   const isComposingRef = useRef(false);
+  const submitGenRef = useRef(0);
+  const activeCompositionSubmitGenRef = useRef<number | null>(null);
   const selectedThreadId = useThreadList((s) => s.selectedThreadId);
   const { layout } = useLayoutContext();
 
@@ -55,20 +57,50 @@ export const DesktopWelcomeComposer = ({
     focusKey: selectedThreadId,
   });
 
+  useEffect(() => {
+    isComposingRef.current = false;
+    activeCompositionSubmitGenRef.current = null;
+  }, [selectedThreadId]);
+
   const handleSubmit = () => {
-    if (!shouldSubmitOnSend(isComposingRef.current)) {
-      return;
-    }
     if (!textContent.trim() || isRunning || isLoadingMessages) {
       return;
     }
 
+    const snapshot = textContent;
     processMessage({
       role: "user",
-      content: textContent,
+      content: snapshot,
     });
 
     setTextContent("");
+    submitGenRef.current += 1;
+    isComposingRef.current = false;
+    textareaRef.current?.blur();
+  };
+
+  const handleChange = (value: string) => {
+    if (
+      isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)
+    ) {
+      if (textContent !== "") {
+        setTextContent("");
+      }
+      return;
+    }
+    setTextContent(value);
+  };
+
+  const handleCompositionEnd = () => {
+    if (
+      isStaleComposition(activeCompositionSubmitGenRef.current, submitGenRef.current)
+    ) {
+      if (textContent !== "") {
+        setTextContent("");
+      }
+    }
+    isComposingRef.current = false;
+    activeCompositionSubmitGenRef.current = null;
   };
 
   useLayoutEffect(() => {
@@ -88,18 +120,25 @@ export const DesktopWelcomeComposer = ({
       <textarea
         ref={textareaRef}
         value={textContent}
-        onChange={(e) => setTextContent(e.target.value)}
+        onChange={(e) => handleChange(e.target.value)}
         className="openui-agent-desktop-welcome-composer__input"
         placeholder={placeholder}
         rows={1}
         onCompositionStart={() => {
           isComposingRef.current = true;
+          activeCompositionSubmitGenRef.current = submitGenRef.current;
         }}
-        onCompositionEnd={() => {
+        onCompositionEnd={handleCompositionEnd}
+        onBlur={() => {
           isComposingRef.current = false;
         }}
         onKeyDown={(e) => {
-          if (shouldSubmitOnEnter(e, isComposingRef.current)) {
+          if (e.key === "Escape" && isComposingRef.current) {
+            isComposingRef.current = false;
+            activeCompositionSubmitGenRef.current = null;
+            return;
+          }
+          if (shouldSubmitOnEnter(e)) {
             e.preventDefault();
             handleSubmit();
           }

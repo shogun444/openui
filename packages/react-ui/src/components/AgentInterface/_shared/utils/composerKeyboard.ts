@@ -21,47 +21,40 @@ const IME_KEY_CODE = 229;
 /**
  * Whether an `Enter` keydown in a composer textarea should send the draft.
  *
- * `Enter` sends and `Shift+Enter` inserts a newline — except while an IME
- * composition is open, where `Enter` belongs to the IME (it commits the
- * conversion candidate) and must not reach the composer.
+ * `Enter` sends and `Shift+Enter` inserts a newline — except for a true IME
+ * commit, where `Enter` belongs to the IME (it commits the conversion
+ * candidate) and must not reach the composer.
  *
- * Without this guard, Windows Voice Typing holds a composition session open
- * across dictation: a physical `Enter` sends and clears the textarea, the
- * composition then finalizes and fires one more `onChange`, and the dictated
- * text reappears in the box the user just emptied. Every CJK IME hits the same
- * path and sends a half-converted phrase instead of committing it.
- *
- * `trackedIsComposing` is the composer-owned `onCompositionStart/End` ref.
- * It covers the stale-timing case where Windows Voice Typing (Chrome 153,
- * Edge 154 on Windows 11 25H2) reports `isComposing: false` and `keyCode: 13`
- * on a fast `Enter` pressed mid-dictation even though the composition session
- * is still open. The ref is set by the earlier `compositionstart` and stays
- * true until `compositionend`, so the fast `Enter` is still blocked.
- *
- * Consequence, shared with every IME-aware composer: the `Enter` that closes a
- * composition does not send. The next one does.
+ * Only the native commit signature blocks: `nativeEvent.isComposing === true`
+ * or `keyCode === 229` (Safari / older Chromium). Windows Voice Typing
+ * (Win+H, Chrome 153 / Edge 154 on Windows 11 25H2) reports a fast mid-
+ * dictation `Enter` as `isComposing: false` + `keyCode: 13`, so it intentionally
+ * sends in a single press: the composer snapshots the draft, submits once,
+ * blurs to detach the OS dictation target, and swallows the late
+ * pre-submit `compositionend` / `onChange` via the submit epoch below.
+ * CJK keeps double-Enter (first commits, second sends) because its commit
+ * `Enter` carries the native signature above.
  */
-export const shouldSubmitOnEnter = (
-  event: ComposerKeyDownEvent,
-  trackedIsComposing = false,
-): boolean => {
+export const shouldSubmitOnEnter = (event: ComposerKeyDownEvent): boolean => {
   if (event.key !== "Enter" || event.shiftKey) return false;
-  if (trackedIsComposing) return false;
   return !event.nativeEvent.isComposing && event.keyCode !== IME_KEY_CODE;
 };
 
 /**
- * Whether a Send-button click should send the draft.
+ * Whether a late composition event belongs to a pre-submit dictation session
+ * and must be swallowed to keep a cleared draft clear.
  *
- * Clicks carry no `isComposing` payload, so call sites pass the same
- * `onCompositionStart/End` ref used for `Enter`. Blocking while the ref is
- * set prevents the click variant of the Voice Typing race (submit + clear
- * mid-dictation, then a late `compositionend`/`onChange` restores the text).
- * A click that lands after `compositionend` (the normal path, including after
- * textarea blur) sees `false` and sends as usual, so working Send behavior is
- * preserved. Streaming cancellation bypasses this via the `isRunning`
- * ternary at the call sites and is unaffected.
+ * Call sites capture `submitGen` at `compositionstart` and compare it at
+ * `compositionend` / `onChange` against the current submit count. A submit
+ * that lands after the composition started (`startSubmitGen < submitGen`)
+ * means the draft was already sent + cleared — the late commit is the echo
+ * the user reported ("already dictated text again with a new word") and must
+ * be dropped. A composition started after the last submit (`===`) is new
+ * typing and must be kept.
  */
-export const shouldSubmitOnSend = (trackedIsComposing = false): boolean => {
-  return !trackedIsComposing;
+export const isStaleComposition = (
+  compositionStartSubmitGen: number | null,
+  currentSubmitGen: number,
+): boolean => {
+  return compositionStartSubmitGen !== null && compositionStartSubmitGen < currentSubmitGen;
 };

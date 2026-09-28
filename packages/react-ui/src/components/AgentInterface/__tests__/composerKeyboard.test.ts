@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ComposerKeyDownEvent,
+  isStaleComposition,
   shouldSubmitOnEnter,
-  shouldSubmitOnSend,
 } from "../_shared/utils/composerKeyboard";
 
 const keyDown = (overrides: Partial<ComposerKeyDownEvent> = {}): ComposerKeyDownEvent => ({
@@ -26,12 +26,13 @@ describe("shouldSubmitOnEnter", () => {
     expect(shouldSubmitOnEnter(keyDown({ key: "a", keyCode: 65 }))).toBe(false);
   });
 
-  it("does not submit while an IME composition is open (isComposing)", () => {
+  it("does not submit while a true IME composition is open (isComposing)", () => {
     expect(shouldSubmitOnEnter(keyDown({ nativeEvent: { isComposing: true } }))).toBe(false);
   });
 
   it("does not submit when the browser reports the IME sentinel keyCode 229", () => {
     // Safari and older Chromium leave isComposing unset on this keydown.
+    // CJK keeps double-Enter: first commits, second sends.
     expect(shouldSubmitOnEnter(keyDown({ keyCode: 229 }))).toBe(false);
   });
 
@@ -39,39 +40,34 @@ describe("shouldSubmitOnEnter", () => {
     expect(shouldSubmitOnEnter(keyDown({ nativeEvent: { isComposing: false } }))).toBe(true);
   });
 
-  it("blocks a fast Enter mid-dictation when the tracked composition ref is set", () => {
-    // Windows Voice Typing (Win+H) can report isComposing: false and keyCode 13
-    // on the fast Enter even though dictation is still composing. The
-    // onCompositionStart/End ref stays true across that window, so it must win.
-    expect(shouldSubmitOnEnter(keyDown(), true)).toBe(false);
-  });
-
-  it("allows Enter once the tracked composition ends", () => {
-    expect(shouldSubmitOnEnter(keyDown(), false)).toBe(true);
+  it("sends voice dictation in a single Enter (isComposing false + keyCode 13)", () => {
+    // Windows Voice Typing (Win+H, Chrome 153 / Edge 154 on Windows 11 25H2)
+    // reports a fast mid-dictation Enter as not-composing. It must snapshot
+    // and send once; the late pre-submit composition echo is swallowed by epoch.
+    expect(shouldSubmitOnEnter(keyDown())).toBe(true);
   });
 });
 
-describe("shouldSubmitOnSend", () => {
-  it("allows Send when no composition is tracked", () => {
-    expect(shouldSubmitOnSend(false)).toBe(true);
-    expect(shouldSubmitOnSend()).toBe(true);
+describe("isStaleComposition", () => {
+  it("keeps new typing with no active composition", () => {
+    expect(isStaleComposition(null, 0)).toBe(false);
   });
 
-  it("blocks Send while a Voice Typing composition is tracked", () => {
-    // Prevents submit + clear mid-dictation followed by a late
-    // compositionend/onChange restoring the dictated text.
-    expect(shouldSubmitOnSend(true)).toBe(false);
+  it("keeps a composition started after the last submit", () => {
+    expect(isStaleComposition(2, 2)).toBe(false);
   });
 
-  it("covers the dictation event sequence with a single submit", () => {
-    // compositionstart -> fast Enter (blocked) -> Send click (blocked) ->
-    // compositionend -> Enter (sends once) / Send (sends once).
-    let trackedIsComposing = true;
-    expect(shouldSubmitOnEnter(keyDown(), trackedIsComposing)).toBe(false);
-    expect(shouldSubmitOnSend(trackedIsComposing)).toBe(false);
+  it("swallows a late echo from a pre-submit dictation session", () => {
+    expect(isStaleComposition(0, 1)).toBe(true);
+  });
 
-    trackedIsComposing = false;
-    expect(shouldSubmitOnEnter(keyDown(), trackedIsComposing)).toBe(true);
-    expect(shouldSubmitOnSend(trackedIsComposing)).toBe(true);
+  it("stays clear across successive dictation rounds", () => {
+    let submitGen = 0;
+    for (let round = 0; round < 5; round += 1) {
+      const startSubmitGen = submitGen;
+      expect(isStaleComposition(startSubmitGen, submitGen)).toBe(false);
+      submitGen += 1;
+      expect(isStaleComposition(startSubmitGen, submitGen)).toBe(true);
+    }
   });
 });
