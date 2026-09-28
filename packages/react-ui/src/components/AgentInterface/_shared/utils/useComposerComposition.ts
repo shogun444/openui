@@ -13,11 +13,7 @@ export interface ComposerCompositionOptions {
 }
 
 const isModifierKey = (key: string) =>
-  key === "Shift" ||
-  key === "Control" ||
-  key === "Alt" ||
-  key === "Meta" ||
-  key === "CapsLock";
+  key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "CapsLock";
 
 /** Trailing-tail silence after a commit Enter before a new Win+H session may append. */
 export const STOP_WINDOW_MS = 1500;

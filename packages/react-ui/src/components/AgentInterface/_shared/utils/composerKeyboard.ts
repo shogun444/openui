@@ -53,10 +53,7 @@ export const shouldSubmitOnEnter = (
  * `compositionend`, and arm the stopped state — first `Enter` commits and
  * stops, second `Enter` sends.
  */
-export const isCommitEnter = (
-  event: ComposerKeyDownEvent,
-  trackedIsComposing = false,
-): boolean => {
+export const isCommitEnter = (event: ComposerKeyDownEvent, trackedIsComposing = false): boolean => {
   if (event.key !== "Enter" || event.shiftKey) return false;
   return event.nativeEvent.isComposing || event.keyCode === IME_KEY_CODE || trackedIsComposing;
 };
